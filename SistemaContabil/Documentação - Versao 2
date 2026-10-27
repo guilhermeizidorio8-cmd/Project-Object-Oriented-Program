@@ -1,0 +1,548 @@
+DOCUMENTAÇÃO DA 2° VERSÃO DO PROJETO:
+
+O arquivo EmpresaSimplesNacional.class contém as funções responsáveis pelas regras de negócio:
+
+init: Construtores que recebem e armazenam os dados iniciais da empresa.
+Setters: Funções como setCnpj, setRazaoSocial, setFaturamentoAnual, entre outras, que atribuem valores às propriedades da empresa. Elas também realizam validações, impedindo textos vazios ou valores negativos.
+Getters: Funções como getCnpj, getRazaoSocial, getFaturamentoAnual, entre outras, que retornam os dados armazenados.
+calcularAliquotaEfetiva: Determina a porcentagem do imposto com base nas faixas de faturamento anual e nas deduções do anexo correspondente.
+calcularTributoMensal: Calcula o valor final do imposto multiplicando a alíquota efetiva pelo faturamento do mês.
+verificarLimite: Valida se o faturamento anual cadastrado ultrapassa o teto do Simples Nacional.
+apenasNumeros: Remove quaisquer caracteres não numéricos de um texto, sendo utilizado para limpar a formatação do CNPJ.
+exibir: Formata e imprime um resumo completo com todos os dados da empresa cadastrada no console.
+
+Correções efetuadas nessa 2° versão do codigo:
+---
+1° Seleção do Anexo na atividade de serviço nunca funcionava.
+O código verificava primeiro se a Atividade Principal era igual a "Serviço" e, dentro desse bloco, verificava se a mesma variável era igual a "Anexo 1", "Anexo 2" ou "Anexo 3". Uma variável guarda um único valor por vez, então ela não pode ser "Serviço" e "Anexo 1" ao mesmo tempo. Por isso os blocos dos anexos nunca eram executados e a alíquota não era calculada para empresas de serviço.
+- Causa: o sistema usava um único campo (a atividade principal) para guardar duas informações diferentes: o tipo de atividade e o anexo em que a empresa de serviço se enquadra.
+- Solução adotada: o campo `atividadePrincipal` guarda o tipo de atividade, e o campo `atividadeSecundaria` foi reaproveitado para guardar o anexo ("Anexo 3", "Anexo 4" ou "Anexo 5"), solicitado apenas quando a atividade principal é "Servico". O método consulta os dois campos em sequência: Comércio usa a tabela do Anexo I, Indústria usa a do Anexo II, e Serviço lê `atividadeSecundaria` para usar a do Anexo III, IV ou V. Se o anexo for inválido, o método lança um erro em vez de devolver um valor incorreto. As comparações de texto passaram a usar `equalsIgnoreCase()` no lugar de `==`, que compara a posição do objeto na memória e não o conteúdo. Os valores de alíquota nominal e parcela a deduzir foram corrigidos para cada anexo (fonte: https://www.contabilizei.com.br/contabilidade-online/tabela-simples-nacional-completa/).
+- Resultado: cada anexo só é alcançado quando a atividade principal e o anexo informado correspondem a ele. As tabelas ficaram em vetores, então não foi mais necessário repetir cinco blocos repetidos de if/else (Comércio, Indústria e Anexos 1 a 3).
+Adicionado: vetores ALIQ_ANEXO1 a 5 e DEDUC_ANEXO1 a 5, a leitura de atividadeSecundaria para escolher o Anexo 3, 4 ou 5, e o erro para anexo inválido.
+Modificado: == trocado por equalsIgnoreCase(), e os valores de alíquota e dedução, que eram uma única tabela repetida em todos os ramos e agora são uma por anexo.
+Removido: os seis blocos repetidos de if/else (Comércio, Indústria e Anexos 1 a 3).
+
+2° O método de cálculo devolvia apenas a alíquota, e não o tributo mensal.
+O enunciado pede que o tributo utilize o faturamento mensal e a alíquota efetiva, mas o método original só calculava e devolvia a alíquota.
+- Causa: o método se chamava calculoTributoMensal, mas só calculava a alíquota efetiva. A etapa de multiplicar pelo faturamento mensal não existia, e o método recebia por parâmetro valores que o objeto já possui.
+- Solução adotada: foram criados dois métodos. `calcularAliquotaEfetiva()` usa os atributos do objeto, aplica a fórmula (faturamento anual × alíquota nominal − parcela a deduzir) ÷ faturamento anual e guarda o resultado. `calcularTributoMensal()` multiplica o faturamento mensal pela alíquota efetiva e arredonda para duas casas.
+- Resultado: o cálculo segue o enunciado e não depende de parâmetros externos.
+Adicionado: o método calcularTributoMensal() (faturamento mensal × alíquota, com setScale(2, HALF_UP)) e o teste de faturamento mensal nulo.
+Modificado: calculoTributoMensal(String, BigDecimal, BigDecimal) virou calcularAliquotaEfetiva(), sem parâmetros, usando os atributos e gravando o resultado em aliquotaEfetiva.
+
+3° Divisão e valores decimais com `BigDecimal` geravam erro e imprecisão.
+- Causa: `divide()` sem escala lança `ArithmeticException` quando o resultado é uma dízima, e `new BigDecimal(0.155)` cria o valor a partir de um `double`, que é impreciso.
+- Solução adotada: a divisão passou a informar escala e arredondamento (`divide(faturamentoAnual, 6, RoundingMode.HALF_UP)`), o faturamento anual igual a zero é rejeitado antes da divisão, e as alíquotas e deduções são criadas a partir de `String` (`new BigDecimal("0.155")`).
+- Resultado: o cálculo não quebra com dízimas nem com divisão por zero, e os valores decimais são exatos.
+Adicionado: import java.math.RoundingMode e o teste de faturamento anual maior que zero.
+Modificado: divide(faturamentoAnual) virou divide(faturamentoAnual, 6, RoundingMode.HALF_UP), e new BigDecimal(0.155) virou new BigDecimal("0.155"), com as tabelas em String.
+
+4° Faturamento acima do limite ou atividade inválida passavam em silêncio.
+- Causa: se nenhuma faixa correspondia, nenhum `if` era executado e o método devolvia o valor recebido, sem avisar do problema.
+- Solução adotada: um laço percorre o vetor `LIMITES` para achar a faixa, e o método lança `IllegalArgumentException` quando o faturamento supera R$ 4,8 milhões ou quando a atividade principal é inválida.
+- Resultado: valores inválidos geram um erro claro, e não uma alíquota falsa.
+Adicionado: o laço for que procura a faixa em LIMITES e as exceções de faturamento acima do limite e de atividade inválida.
+Modificado: a escolha da faixa, que era uma cadeia de if/else com LIMITEFAIXA1 a 6, agora usa o vetor LIMITES.
+
+5° `verificarLimite` estava com a lógica invertida.
+- Causa: o método retornava `true` quando o faturamento ultrapassava o limite, mas o enunciado pede verificar se a empresa está dentro dele.
+- Solução adotada: passou a retornar `faturamentoAnual <= LIMITES[5]` (R$ 4,8 milhões), usando o atributo do objeto em vez de um parâmetro, com verificação de `null`.
+- Resultado: o método retorna `true` para empresas dentro do limite, inclusive as que faturam exatamente R$ 4,8 milhões.
+Adicionado: o teste de faturamentoAnual == null.
+Modificado: o nome (VerificarLimite → verificarLimite), o parâmetro (removido, passa a usar o atributo) e a condição (> LIMITEFAIXA6 → <= LIMITES[5]).
+
+6° O construtor completo estava incompleto e não validava os dados.
+- Causa: o construtor não recebia o atributo `municipio`, que é obrigatório, e atribuía os valores direto aos campos, aceitando faturamento negativo ou CNPJ vazio.
+- Solução adotada: `municipio` foi incluído nos parâmetros, e o construtor passou a chamar os setters de cada atributo.
+- Resultado: as mesmas validações valem para os dois modos de criação do objeto (construtor completo e construtor padrão com setters).
+Adicionado: o parâmetro municipio (depois de estado) e this.setMunicipio(municipio).
+Modificado: as atribuições diretas (this.x = x) viraram chamadas aos setters.
+
+7° Validações dos setters não funcionavam, quebravam com null e exibiam mensagens do campo errado.
+Causa: os setters apenas imprimiam uma mensagem e ignoravam o valor, sem que quem chamava soubesse do erro. Os setters de BigDecimal davam NullPointerException com null, e isEmpty() aceitava CNPJ e razão social só com espaços. As mensagens de faturamento mensal, alíquota efetiva e número de funcionários diziam "Faturamento Anual" (copiada do setter de faturamento anual), e o usuário via um erro que não correspondia ao campo com problema. Além disso, o setter de atividade principal não validava nada.
+Solução adotada: os setters passaram a lançar IllegalArgumentException. O teste de null vem antes da comparação (x == null || x.compareTo(...) < 0), e isBlank() substituiu isEmpty() para CNPJ e razão social. Cada setter passou a ter a própria mensagem ("Faturamento Mensal...", "Alíquota Efetiva...", "Número de funcionarios não pode ser Negativo!"). O setAtividadePrincipal passou a validar o valor (detalhado no 11°), com uma mensagem que lista as opções exatamente como o código as compara ("Comercio, Industria ou Servico").
+Resultado: valores inválidos ou nulos são rejeitados com mensagem clara e referente ao campo correto, e a tela pode capturar o erro com try/catch e mostrá-lo ao usuário.
+Adicionado: o teste de null nos setters de BigDecimal, a validação do setAtividadePrincipal e a mensagem dele.
+Modificado: System.out.println virou throw new IllegalArgumentException, isEmpty() virou isBlank(), e as mensagens dos setters de faturamento mensal, alíquota efetiva e número de funcionários.
+
+8° Nomenclatura fora do padrão camelCase.
+- Causa: o enunciado exige camelCase, mas havia `CNPJ`, `VerificarLimite` e `Exibir`.
+- Solução adotada: os nomes passaram a `cnpj`, `getCnpj()`, `setCnpj()`, `verificarLimite()` e `exibir()`.
+- Resultado: o código segue o padrão pedido.
+Modificado: o atributo CNPJ virou cnpj, getCNPJ/setCNPJ viraram getCnpj/setCnpj, VerificarLimite virou verificarLimite e Exibir virou exibir.
+
+9° `exibir()` quebrava com dados não preenchidos e mostrava informações erradas.
+- Causa: `dataDeInicio.format(...)` gera `NullPointerException` quando a data não foi informada. A alíquota aparecia com "R$" e como fração (0.068400), e o município não era exibido.
+- Solução adotada: a data e a alíquota são tratadas antes da impressão ("não informada" e "não calculada" quando forem `null`), a alíquota é mostrada em porcentagem, o município foi incluído e o rótulo passou a "Atividade Secundaria (Anexo)".
+- Resultado: o método exibe os dados de qualquer objeto sem quebrar, inclusive os criados com o construtor padrão.
+Adicionado: as variáveis data e aliquota com tratamento de null e a linha do município.
+Modificado: a alíquota deixou de aparecer como fração com "R$" e passou a aparecer em porcentagem, e o rótulo virou "Atividade Secundaria (Anexo)".
+
+10° Constantes das tabelas.
+Os limites e as tabelas de alíquotas e deduções passaram a ser `private static final`, por serem constantes da classe e não dados de cada objeto.
+Adicionado: LIMITES e as tabelas ALIQ_* e DEDUC_*, como private static final.
+Removido: as constantes LIMITEFAIXA1 a 6, que eram de instância.
+
+11° O setter da atividade principal não validava o valor informado.
+Causa: o setAtividadePrincipal original aceitava qualquer texto (por exemplo, "xyz" ou "comercio2"). Como o cálculo da alíquota depende desse campo para escolher o anexo, o erro só apareceria mais tarde, na hora do cálculo, longe do cadastro que o causou.
+Solução adotada: o setter passou a aceitar somente "Comercio", "Industria" ou "Servico", comparando com equalsIgnoreCase() e o operador || (OU), com o teste atividadePrincipal != null antes, para evitar NullPointerException. Qualquer outro valor lança IllegalArgumentException.
+Resultado: o erro é detectado no momento do cadastro, e o construtor completo, que chama esse setter, passa a rejeitar atividades inválidas.
+Adicionado: a validação completa do setAtividadePrincipal, com o teste de null e a mensagem de erro.
+
+12° A alíquota efetiva podia ficar desatualizada no cálculo do tributo.
+Causa: aliquotaEfetiva é um atributo do objeto e pode ser preenchida por setter ou pelo construtor completo (que exige um valor, como BigDecimal.ZERO quando ainda não foi calculada). Se o faturamento anual ou o anexo mudassem depois, ou se o valor de preenchimento fosse usado, o tributo mensal seria calculado com uma alíquota antiga ou zerada.
+Solução adotada: o calcularTributoMensal() chama calcularAliquotaEfetiva() sempre, antes de multiplicar pelo faturamento mensal.
+Resultado: o tributo sempre usa a alíquota correspondente ao faturamento anual e ao anexo atuais. O valor informado no construtor serve apenas como preenchimento do parâmetro.
+Adicionado: a chamada a calcularAliquotaEfetiva() dentro de calcularTributoMensal().
+
+13° O cálculo da alíquota dependia de um campo que podia estar vazio.
+Causa: em objetos criados com o construtor padrão, atividadePrincipal começa como null até o setter ser chamado. Como o cálculo usa atividadePrincipal.equalsIgnoreCase(...), chamá-lo antes de preencher o campo geraria NullPointerException, um erro genérico que não indica o que faltou.
+Solução adotada: foi adicionado, no início de calcularAliquotaEfetiva(), o teste atividadePrincipal == null, que lança IllegalStateException com a mensagem "Atividade principal não informada".
+Resultado: o erro passa a ser claro e controlado, e a tela pode capturá-lo e informar o usuário do que falta preencher.
+Adicionado: o teste de atividadePrincipal == null no início de calcularAliquotaEfetiva().
+
+14° Registro da fonte e da data de consulta das tabelas.
+- Causa: o enunciado exige que limites e alíquotas sejam acompanhados da fonte e da data da consulta, e o código não trazia essa informação.
+- Solução adotada: foram incluídos, acima das tabelas, a fonte 
+- Resultado: o código atende ao requisito de documentação das fontes normativas.
+Adicionado: os comentários com a fonte e a data da consulta (20/09/2026) acima das tabelas.
+
+---
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+O arquivo EmpresaMEI.class contém as funções responsáveis pelas regras de negócio da empresa enquadrada como MEI:
+
+init: Construtores (padrão e completo) que recebem e armazenam os dados iniciais da empresa.
+Setters: Funções como setCnpj, setRazaoSocial, setOcupacaoPrincipal, setOcupacaoSecundaria, setFaturamentoAnual, entre outras, que atribuem valores às propriedades da empresa. Elas também realizam validações, impedindo textos vazios, categorias inválidas de ocupação e valores negativos.
+Getters: Funções como getCnpj, getRazaoSocial, getFaturamentoAnual, entre outras, que retornam os dados armazenados.
+calculoDAS: Calcula o valor mensal do DAS somando o INSS ao adicional de ICMS e/ou ISS correspondente à ocupação principal e secundária da empresa.
+verificarLimite: Valida se o faturamento anual cadastrado está dentro do teto do MEI.
+exibir: Formata e imprime um resumo completo com todos os dados da empresa cadastrada no console.
+
+Correções efetuadas nessa 2° versão do código:
+---
+1° Atributos não eram encapsulados.
+Causa: os atributos (cnpj, razaoSocial, faturamentoAnual etc.) foram declarados sem modificador de acesso, ficando visíveis para qualquer classe do mesmo pacote, o que contraria o requisito "Todos os atributos devem ser private".
+Solução adotada: todos os atributos passaram a private, acessíveis apenas pelos próprios getters e setters.
+Resultado: a classe segue o padrão de encapsulamento exigido, e qualquer alteração nos dados passa obrigatoriamente pelas validações.
+Modificado: os atributos, de package-private para private.
+
+2° Valores monetários usavam float e, depois, BigDecimal construído a partir de double.
+Causa: SALARIOMINIMO e INSS eram float, e os incrementos do DAS eram criados com new BigDecimal(INSS + 1.00), que herda a imprecisão do ponto flutuante binário (não representa exatamente valores como 0.05 ou 1621.00).
+Solução adotada: os valores passaram a ser BigDecimal construídos a partir de String (new BigDecimal("1621.00"), new BigDecimal("0.05") etc.).
+Resultado: os cálculos do DAS deixam de sofrer o erro de arredondamento típico de float/double.
+Modificado: SALARIOMINIMO, INSS e os adicionais do cálculo, de float/BigDecimal(double) para BigDecimal(String).
+
+3° Nomenclatura fora do padrão camelCase.
+Causa: havia CNPJ, CalculoDAS, Exibir e VerificarLimite, em desacordo com o padrão exigido.
+Solução adotada: os nomes passaram a cnpj, getCnpj()/setCnpj(), calculoDAS(), exibir() e verificarLimite().
+Resultado: o código segue o padrão de nomenclatura pedido.
+Modificado: os nomes de atributos e métodos citados acima.
+
+4° setCnpj não validava o formato nem extraía os números.
+Causa: o setter só checava se o texto estava vazio (isEmpty()), aceitando qualquer formatação (pontos, barras, traços) e qualquer quantidade de caracteres.
+Solução adotada: passou a usar isBlank() (rejeita também texto só com espaços), remover pontuação com replaceAll("[^0-9]", "") e checar se restam exatamente 14 dígitos.
+Resultado: o CNPJ armazenado é sempre só números, com o tamanho correto, independentemente de como o usuário digitou.
+Adicionado: a extração de dígitos e a checagem de 14 caracteres.
+Modificado: isEmpty() virou isBlank().
+
+5° Setters não validavam de fato os dados.
+Causa: os setters apenas imprimiam uma mensagem (System.out.println) quando o valor era inválido, mas terminavam sem lançar nenhum erro — o atributo podia ficar sem ser preenchido (null) sem que quem chamou o setter soubesse.
+Solução adotada: os setters passaram a lançar IllegalArgumentException, cada um com mensagem específica do campo.
+Resultado: valores inválidos são rejeitados de forma explícita, e uma tela pode capturar o erro com try/catch e avisar o usuário.
+Modificado: System.out.println(...) virou throw new IllegalArgumentException(...).
+
+6° Setters de BigDecimal quebravam com NullPointerException.
+Causa: o teste chamava faturamentoAnual.compareTo(BigDecimal.ZERO) diretamente, sem checar antes se o valor era null.
+Solução adotada: a condição passou a (valor == null || valor.compareTo(BigDecimal.ZERO) < 0), usando o curto-circuito do || para nunca chamar compareTo em valor nulo.
+Resultado: passar null para um setter monetário gera erro controlado em vez de NullPointerException.
+Modificado: a ordem/condição de validação em setFaturamentoAnual, setFaturamentoMensal e setValorMensalDAS.
+
+7° setOcupacaoPrincipal e setOcupacaoSecundaria não validavam a categoria informada.
+Causa: qualquer texto era aceito nos dois campos, mas o cálculo do DAS depende deles para escolher a faixa correta do imposto.
+Solução adotada: setOcupacaoPrincipal passou a aceitar só "Comercio", "Industria" ou "Servico" (equalsIgnoreCase(), com != null e !isBlank() testados antes). setOcupacaoSecundaria passou a aceitar as mesmas três categorias ou ficar em branco/nula (empresa sem ocupação secundária); qualquer outro texto lança erro.
+Resultado: o erro aparece no cadastro, não só na hora de calcular o imposto, e o cálculo deixa de depender de texto livre.
+Adicionado: a validação completa dos dois setters e suas mensagens de erro.
+
+8° Ordem invertida no teste de nulidade causava NullPointerException.
+Causa: uma tentativa de validar setOcupacaoSecundaria testou ocupacaoSecundaria.equalsIgnoreCase(...) antes de ocupacaoSecundaria != null; como o && é avaliado da esquerda para a direita, um valor null quebrava o método antes de chegar no teste de nulidade.
+Solução adotada: o teste != null voltou a ser sempre o primeiro da expressão.
+Resultado: passar null para setOcupacaoSecundaria (empresa sem ocupação secundária) não quebra mais o programa.
+Modificado: a ordem dos testes na condição de setOcupacaoSecundaria.
+
+9° A comparação de "Serviço" no cálculo do DAS nunca era verdadeira.
+Causa: setOcupacaoPrincipal só aceitava e gravava "Servico" (sem cedilha), mas calculoDAS comparava com "Serviço" (com cedilha) — numa versão anterior, ainda usando == em vez de um método de comparação de conteúdo. As grafias nunca coincidiam, então o ramo pensado para serviço sem ocupação secundária nunca era executado.
+Solução adotada: a comparação em calculoDAS() passou a usar exatamente a mesma grafia e o mesmo método (equalsIgnoreCase("Servico")) usados no setter.
+Resultado: o cálculo passa a diferenciar corretamente comércio/indústria, serviço sem ocupação secundária e os demais casos.
+Modificado: a comparação de texto em calculoDAS(), de =="Serviço" para equalsIgnoreCase("Servico").
+
+10° calculoDAS recebia por parâmetro dados que já eram atributos do próprio objeto.
+Causa: o método original recebia valorMensalDAS, ocupacaoPrincipal e ocupacaoSecundario como parâmetros, permitindo calcular o DAS com valores diferentes dos realmente cadastrados, além de descartar sem uso o parâmetro valorMensalDAS.
+Solução adotada: o método passou a se chamar calculoDAS(), sem parâmetros, usando this.ocupacaoPrincipal e this.ocupacaoSecundaria.
+Resultado: o cálculo sempre usa os dados de fato cadastrados na empresa.
+Modificado: a assinatura do método, de CalculoDAS(BigDecimal, String, String) para calculoDAS().
+
+11° calculoDAS gravava o resultado direto no atributo, sem passar pela validação do setter.
+Causa: o método atribuía valorMensalDAS = INSS.add(...) diretamente, ignorando a validação já existente em setValorMensalDAS.
+Solução adotada: as três atribuições passaram a usar this.setValorMensalDAS(...).
+Resultado: o valor calculado do DAS passa pela mesma validação de qualquer outra atribuição desse atributo.
+Modificado: valorMensalDAS = ... virou this.setValorMensalDAS(...) nos três ramos do método.
+
+12° Os valores do adicional do DAS estavam fixos no método, sem parametrização nem fonte documentada.
+Causa: os números 1.00, 5.00 e 6.00 apareciam soltos dentro de calculoDAS(), sem indicação de origem — o enunciado pede que valores desse tipo sejam parametrizáveis, por poderem sofrer alteração legal.
+Solução adotada: os valores foram extraídos para as constantes ICMS, ISS e ICMS_E_ISS (private static final BigDecimal), com fonte e data de consulta registradas em comentário.
+Resultado: os valores usados no cálculo ficam centralizados, documentados e fáceis de atualizar.
+Adicionado: as constantes ICMS, ISS, ICMS_E_ISS e o comentário de fonte/data de consulta.
+
+13° verificarLimite estava com a lógica invertida e recebia parâmetro desnecessário.
+Causa: o método retornava true quando o faturamento ultrapassava o limite do MEI — o oposto do que o nome promete —, e recebia faturamentoAnual por parâmetro em vez de usar o atributo do próprio objeto.
+Solução adotada: passou a retornar faturamentoAnual.compareTo(LIMITEFATURAMENTO) <= 0, sem parâmetro, usando this.faturamentoAnual com checagem de null antes.
+Resultado: o método retorna true quando a empresa está de fato dentro do limite, inclusive faturando exatamente o valor-limite.
+Modificado: o nome (VerificarLimite → verificarLimite), o parâmetro (removido) e a condição (> LIMITEFATURAMENTO → <= LIMITEFATURAMENTO).
+
+14° O construtor completo não validava os dados e não recebia o município.
+Causa: o construtor atribuía os valores diretamente aos atributos (this.CNPJ = CNPJ), sem passar pelas validações, e não recebia municipio, mesmo sendo atributo obrigatório.
+Solução adotada: municipio foi incluído nos parâmetros (depois de estado), e todas as atribuições passaram a chamar os respectivos setters.
+Resultado: as mesmas validações valem tanto para o construtor completo quanto para o padrão com setters, e o município passa a ser preenchido.
+Adicionado: o parâmetro municipio e a chamada this.setMunicipio(municipio).
+Modificado: as atribuições diretas (this.x = x) viraram chamadas aos setters.
+
+15° exibir() podia quebrar ou mostrar dado incorreto com campos não preenchidos.
+Causa: datadeAbertura.format(formato) gerava NullPointerException quando a data não era informada, e existeEmpregador aparecia como o texto literal "null" quando setIndicadordeExistencia nunca era chamado.
+Solução adotada: a data e o status do funcionário passaram a ser tratados antes da impressão, com "não informada" e "Não" como padrão quando forem null.
+Resultado: exibir() funciona sem quebrar em qualquer empresa, mesmo as criadas só com o construtor sem parâmetros.
+Adicionado: as variáveis data e funcionario, com tratamento de null.
+---
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+O arquivo EmpresaLucroReal.class contém as funções responsáveis pelas regras de negócio da empresa enquadrada como Lucro Real:
+--
+init: Construtores (padrão e completo) que recebem e armazenam os dados iniciais da empresa. O construtor completo chama os setters, então aplica as mesmas validações do construtor padrão.
+Setters: Funções como setCnpj, setRazaoSocial, setReceitaBrutaAnual, setAliquotaIRPJ, setLucroContabil, entre outras, que atribuem valores às propriedades da empresa. Elas também realizam validações, impedindo textos vazios, valores nulos e valores negativos em receita, despesas, alíquotas e prejuízo fiscal. O lucro contábil e o lucro ajustado aceitam valores negativos. O setCnpj remove a pontuação e exige exatamente 14 números.
+Getters: Funções como getCnpj, getRazaoSocial, getLucroContabil, getLucroAjustado, entre outras, que retornam os dados armazenados.
+validarDadosDoCalculo: Confere se lucro contábil, despesas dedutíveis e prejuízo fiscal foram informados antes de qualquer cálculo, e lança um erro claro se faltar algum.
+calcularLucroReal: Calcula o lucro ajustado (lucro contábil menos despesas dedutíveis) e, quando há lucro, compensa o prejuízo fiscal limitado a 30% desse lucro. Retorna o lucro real. Quando o resultado é negativo (prejuízo no período), não há compensação.
+calcularIRPJ: Aplica a alíquota do IRPJ do objeto sobre o lucro real e soma o adicional de 10% sobre a parte que excede R$ 240.000. Retorna zero quando não há lucro.
+calcularCSLL: Aplica a alíquota da CSLL do objeto sobre o lucro real. Retorna zero quando não há lucro.
+exibir: Formata e imprime no console um resumo completo dos dados da empresa, calculando na hora o lucro real, o IRPJ e a CSLL. Se faltar algum dado para o cálculo, mostra "não calculado" em vez de quebrar.
+
+Correções efetuadas nessa 2° versão do código:
+---
+1° Atributos não eram encapsulados.
+- Causa: os atributos (cnpj, razaoSocial, receitaBrutaAnual etc.) foram declarados sem modificador de acesso, ficando visíveis para qualquer classe do mesmo pacote, o que contraria o requisito "Todos os atributos devem ser private".
+- Solução adotada: todos os atributos, inclusive o formatador de data, passaram a `private`, acessíveis apenas pelos getters e setters.
+- Resultado: a classe segue o encapsulamento exigido, e qualquer alteração nos dados passa obrigatoriamente pelas validações.
+Modificado: os atributos, de package-private para private.
+
+2° Os cálculos de IRPJ e CSLL sobrescreviam as alíquotas do objeto.
+- Causa: `calcularIRPJ` e `calcularCSLL` gravavam o valor do imposto em reais dentro de `aliquotaIRPJ` e `aliquotaCSLL`, que guardam as alíquotas. Depois da primeira chamada a alíquota se perdia, e uma segunda chamada calculava sobre esse valor errado.
+- Solução adotada: o resultado passou a ficar em variáveis locais, e as alíquotas do objeto não são mais alteradas.
+- Resultado: os métodos podem ser chamados várias vezes com o mesmo resultado, e as alíquotas informadas permanecem intactas.
+Adicionado: as variáveis locais irpj (em calcularIRPJ) e o uso direto do resultado em calcularCSLL.
+Modificado: aliquotaIRPJ = ... e aliquotaCSLL = ... deixaram de ser atribuições.
+
+3° As alíquotas informadas no objeto eram ignoradas, e valores legais estavam fixos nos métodos.
+- Causa: os métodos usavam 15% e 9% escritos dentro do código, e também 30%, R$ 240.000 e 10% soltos. O enunciado exige que as alíquotas sejam parametrizáveis e que o cálculo use as alíquotas definidas.
+- Solução adotada: IRPJ e CSLL passaram a usar `aliquotaIRPJ` e `aliquotaCSLL` do objeto. O limite de compensação (30%), o limite do adicional (R$ 240.000) e a alíquota do adicional (10%) foram extraídos para as constantes `LIMITE_COMPENSACAO_PREJUIZO`, `LIMITE_ADICIONAL_IRPJ` e `ALIQUOTA_ADICIONAL_IRPJ`.
+- Resultado: cada empresa pode ter suas próprias alíquotas, e os valores legais ficam centralizados e fáceis de atualizar.
+Adicionado: as constantes LIMITE_COMPENSACAO_PREJUIZO, LIMITE_ADICIONAL_IRPJ e ALIQUOTA_ADICIONAL_IRPJ (private static final BigDecimal).
+Modificado: os valores 0.15 e 0.09 fixos passaram a ser aliquotaIRPJ e aliquotaCSLL.
+
+4° Valores decimais criados a partir de `double` e resultados sem arredondamento.
+- Causa: `new BigDecimal(0.3)`, `new BigDecimal(0.15)`, `new BigDecimal(0.1)` e `new BigDecimal(0.09)` herdam a imprecisão do ponto flutuante, contrariando o requisito de não usar double em valores monetários. Os resultados também saíam com dezenas de casas decimais.
+- Solução adotada: as constantes passaram a ser criadas a partir de `String` (`new BigDecimal("0.30")`), e os resultados usam `setScale(2, RoundingMode.HALF_UP)`.
+- Resultado: os valores decimais são exatos e os resultados saem em duas casas, como valores em reais.
+Adicionado: import java.math.RoundingMode e setScale(2, RoundingMode.HALF_UP) nos resultados.
+Modificado: new BigDecimal(0.3) virou new BigDecimal("0.30"), e os demais valores, de double para String.
+
+5° Lucro e prejuízo não eram tratados de forma distinta.
+- Causa: quando a base de cálculo era negativa, o limite de compensação também ficava negativo, e o menor valor entre o prejuízo e esse limite era negativo. Subtrair um valor negativo aumentava o lucro, e o IRPJ e a CSLL saíam negativos.
+- Solução adotada: a compensação de prejuízo só é aplicada quando há lucro. Quando o lucro real é zero ou negativo, `calcularIRPJ` e `calcularCSLL` retornam zero.
+- Resultado: um período com prejuízo não gera imposto negativo nem compensação indevida. Testado com lucro contábil de 100.000 e despesas de 300.000: o lucro real dá −200.000,00, e IRPJ e CSLL dão zero.
+Adicionado: o teste `lucroAjustado.signum() > 0` antes da compensação e o retorno zero nos dois impostos quando não há lucro.
+Modificado: a compensação, que antes era calculada sempre.
+
+6° Lucro contábil, lucro ajustado e lucro real estavam misturados.
+- Causa: o método gravava em `lucroAjustado` o valor já depois da compensação de prejuízo, ou seja, o lucro real. O enunciado exige que lucro contábil, lucro ajustado e prejuízo fiscal permaneçam conceitualmente separados.
+- Solução adotada: `lucroAjustado` passou a guardar a base antes da compensação (lucro contábil menos despesas dedutíveis), e `calcularLucroReal()` retorna o lucro real (após compensar o prejuízo) sem sobrescrever o lucro ajustado.
+- Resultado: cada conceito tem seu próprio valor. Com lucro contábil de 1.000.000, despesas de 600.000 e prejuízo de 500.000, o lucro ajustado é 400.000,00 e o lucro real é 280.000,00.
+Modificado: a atribuição de lucroAjustado (antes recebia o valor após a compensação) e o retorno de calcularLucroReal().
+
+7° Os cálculos dependiam da ordem de chamada e quebravam com dados nulos.
+- Causa: `calcularIRPJ` e `calcularCSLL` usavam o campo `lucroAjustado`, que só existia depois de `calcularLucroReal` ter sido chamado. Se não tivesse sido, ou se faltassem lucro contábil, despesas ou prejuízo fiscal, ocorria `NullPointerException`.
+- Solução adotada: os dois impostos passaram a chamar `calcularLucroReal()` por conta própria, e o novo método `validarDadosDoCalculo()` lança `IllegalStateException` com mensagem clara quando falta algum desses três dados.
+- Resultado: os métodos podem ser chamados em qualquer ordem, e a falta de dados gera um erro controlado.
+Adicionado: o método validarDadosDoCalculo() e as chamadas a calcularLucroReal() dentro de calcularIRPJ() e calcularCSLL().
+
+8° Lucro contábil e lucro ajustado não aceitavam valores negativos.
+- Causa: `setLucroContabil` e `setLucroAjustado` rejeitavam valores menores que zero, mas o enunciado diz que o lucro contábil pode ser positivo ou negativo, e a base fiscal também pode ser negativa em um período com prejuízo.
+- Solução adotada: os dois setters passaram a rejeitar apenas `null`. O prejuízo fiscal continua rejeitando negativos, conforme a regra do enunciado.
+- Resultado: empresas com prejuízo contábil podem ser cadastradas, e a regra "prejuízo fiscal não pode ser negativo" segue valendo.
+Modificado: a condição de setLucroContabil e setLucroAjustado, de (null ou negativo) para apenas null.
+
+9° Mensagens de erro copiadas de outro campo.
+- Causa: o setter de despesas dedutíveis dizia "Receita Brutal Anual", e os setters de lucro contábil, lucro ajustado e prejuízo fiscal diziam "A Aliquota CSLL", o que fazia o usuário ver um erro que não correspondia ao campo com problema.
+- Solução adotada: cada setter passou a ter uma mensagem que cita o próprio campo.
+- Resultado: a mensagem sempre indica o campo correto.
+Modificado: as mensagens de setDespesasDedutiveis, setLucroContabil, setLucroAjustado e setPrejuizoFiscal.
+
+10° Nomenclatura fora do padrão.
+- Causa: o enunciado exige camelCase, e nomes com acento fogem do padrão. Havia `despesasDedutíveis` (atributo, getter, setter e parâmetro) e o método `Exibir()`.
+- Solução adotada: os nomes passaram a `despesasDedutiveis`, `getDespesasDedutiveis()`, `setDespesasDedutiveis()` e `exibir()`.
+- Resultado: o código segue o padrão pedido e evita problemas de codificação com caracteres acentuados.
+Modificado: os nomes citados acima.
+
+11° O construtor completo não validava os dados.
+- Causa: o construtor atribuía os valores diretamente aos atributos, sem passar pelas validações. Era possível criar uma empresa com CNPJ inválido, alíquota negativa ou razão social vazia.
+- Solução adotada: todas as atribuições passaram a chamar os respectivos setters.
+- Resultado: as mesmas validações valem para o construtor completo e para o construtor padrão com setters. O parâmetro `lucroAjustado` exige um valor não nulo (por exemplo, `BigDecimal.ZERO`), e ele é recalculado quando o lucro real é calculado.
+Modificado: as atribuições diretas (this.x = x) viraram chamadas aos setters.
+
+12° `exibir()` quebrava com dados não preenchidos e mostrava informações incorretas.
+- Causa: `dataDeInicio.format(...)` gerava `NullPointerException` quando a data não era informada. A linha "IRPJ devido" mostrava o atributo da alíquota, o município não aparecia, e o lucro ajustado e o lucro real eram exibidos como um único valor.
+- Solução adotada: a data é tratada antes da impressão ("não informada" quando for null). O município e as alíquotas passaram a ser exibidos. O lucro ajustado e o lucro real aparecem em linhas separadas, e o IRPJ e a CSLL mostram os valores calculados. O cálculo fica dentro de um `try/catch` de `IllegalStateException`, que exibe "não calculado" quando faltam dados.
+- Resultado: o método imprime os dados de qualquer empresa sem quebrar por falta de data ou de dados financeiros, inclusive as criadas com o construtor sem parâmetros.
+Adicionado: as variáveis lucroReal, ajustado, irpj, csll e data, com tratamento de erro e de null, e as linhas de Município e Alíquotas.
+Modificado: "IRPJ devido" (antes mostrava a alíquota) e "Lucro Ajustado (Lucro Real)", agora em duas linhas.
+
+13° Indentação e organização do código.
+- Causa: construtores, getters e setters estavam na margem esquerda da classe, enquanto os atributos tinham um nível de indentação, o que dificultava a leitura.
+- Solução adotada: a classe foi reformatada com indentação uniforme.
+- Resultado: o código segue a padronização de indentação exigida pelo enunciado.
+Modificado: a indentação de toda a classe.
+
+---
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+O arquivo EmpresaLucroPresumido.class contém as funções responsáveis pelas regras de negócio da empresa enquadrada como Lucro Presumido:
+
+init: Construtores (padrão e completo) que recebem e armazenam os dados iniciais da empresa. O construtor completo chama os setters, então aplica as mesmas validações do construtor padrão.
+Setters: Funções como setCnpj, setRazaoSocial, setAtividadePrincipal, setReceitaBrutaTrimestral, setPercentualDePresuncao, setAliquotaIRPJ, entre outras, que atribuem valores às propriedades da empresa. Elas também realizam validações, impedindo textos vazios, valores nulos, valores negativos em receitas, alíquotas, PIS e COFINS, atividade principal fora da tabela da Receita Federal e percentual de presunção fora do intervalo de 0 a 100. O setCnpj remove a pontuação e exige exatamente 14 números.
+Getters: Funções como getCnpj, getRazaoSocial, getReceitaBrutaTrimestral, getPercentualDePresuncao, entre outras, que retornam os dados armazenados.
+sugerirPercentualPresuncao: Sugere o percentual de presunção (1,6%, 8%, 16% ou 32%) de acordo com a atividade principal. Para "Servicos gerais", o percentual depende da receita bruta anual (16% até R$ 120.000 e 32% acima). Para a comercialização de veículos usados, lança um erro pedindo que o percentual seja informado manualmente. O resultado é só uma sugestão: quem define o percentual é o objeto, pelo setPercentualDePresuncao.
+calcularBasePresumida: Calcula a base presumida: receita bruta trimestral multiplicada pelo percentual de presunção e dividida por 100, com duas casas decimais.
+calcularIRPJ: Aplica a alíquota do IRPJ do objeto sobre a base presumida e soma o adicional de 10% sobre a parte da base que excede R$ 60.000 no trimestre.
+calcularCSLL: Aplica a alíquota da CSLL do objeto sobre a base presumida.
+calcularValorPIS: Calcula o PIS (0,65% da receita bruta trimestral) e guarda o resultado no objeto.
+calcularValorCOFINS: Calcula a COFINS (3% da receita bruta trimestral) e guarda o resultado no objeto.
+calcularTotalTributosTrimestrais: Soma o IRPJ, a CSLL, o PIS e a COFINS do trimestre.
+exibir: Formata e imprime no console um resumo completo dos dados da empresa, calculando na hora a base presumida, o IRPJ, a CSLL e o total. Se faltar algum dado para o cálculo, mostra "não calculada" ou "não calculado" em vez de quebrar.
+
+Correções efetuadas nessa 2° versão do código:
+---
+1° Atributos não eram encapsulados.
+- Causa: os atributos (CNPJ, razaoSocial, receitaBrutaAnual etc.), o formatador de data e a constante LIMITEBASE foram declarados sem modificador de acesso, ficando visíveis para qualquer classe do mesmo pacote, o que contraria o requisito "Todos os atributos devem ser private".
+- Solução adotada: todos os atributos passaram a `private`, acessíveis apenas pelos getters e setters. O formatador de data deixou de ser um atributo de cada objeto e virou a constante `private static final FORMATO`.
+- Resultado: a classe segue o encapsulamento exigido, e qualquer alteração nos dados passa obrigatoriamente pelas validações.
+Modificado: os atributos, de package-private para private, e o formatador, de atributo de instância para constante estática.
+
+2° Nomenclatura fora do padrão.
+- Causa: o enunciado exige camelCase e nomes coerentes com os atributos pedidos. Havia `CNPJ` (atributo, getter, setter e parâmetro), os métodos `CalculoBasePresumidaCSLL`, `CalculoBasePresumidaIRPJ` e `Exibir`, e os atributos `BaseDePresuncaoIRPJ` e `BaseDePresuncaoCSLL`, todos com inicial maiúscula. O atributo `datadeAbertura` também não correspondia ao "data de início da atividade" do enunciado.
+- Solução adotada: os nomes passaram a `cnpj`, `getCnpj()`, `setCnpj()`, `exibir()`, `dataDeInicio`, `getDataDeInicio()` e `setDataDeInicio()`. Os dois métodos de base presumida foram unificados em `calcularBasePresumida()` (ver o 7°).
+- Resultado: o código segue o padrão de nomenclatura pedido e os nomes do enunciado.
+Modificado: os nomes citados acima.
+
+3° Atributos e constante sem função.
+- Causa: a constante `LIMITEBASE` (R$ 1.250.000) era comparada com a receita trimestral, mas os dois ramos do if/else executavam exatamente o mesmo cálculo, então a comparação não tinha efeito. Os atributos `excedente` e `escedente` (o mesmo nome, com erro de digitação) eram declarados e nunca usados.
+- Solução adotada: foram removidos. As bases presumidas deixaram de ser atributos e passaram a ser calculadas quando necessário, por `calcularBasePresumida()`.
+- Resultado: a classe guarda apenas os dados da empresa, e as bases são sempre calculadas a partir dos dados atuais.
+Removido: LIMITEBASE, excedente, escedente, BaseDePresuncaoIRPJ e BaseDePresuncaoCSLL.
+
+4° Setters não validavam de fato os dados.
+- Causa: os setters apenas imprimiam uma mensagem (System.out.println) e deixavam o atributo sem preenchimento, sem que quem chamou soubesse do erro. Os setters de BigDecimal chamavam `compareTo` direto e geravam NullPointerException com null. O CNPJ só verificava `isEmpty()`, aceitando texto só com espaços, pontuação e qualquer tamanho. O `setPercentualDePresuncao`, o `setValorPIS` e o `setValorCOFINS` não validavam nada: aceitavam percentual 150 e PIS negativo. As mensagens também tinham erros ("Receita Brutal Anual", "Receita Brutal Trimestral", "A Aliquota IRPJ").
+- Solução adotada: os setters passaram a lançar IllegalArgumentException. O teste de null vem antes da comparação, `isBlank()` substituiu `isEmpty()`, e o `setCnpj` remove a pontuação e exige 14 números. O `setPercentualDePresuncao` aceita só valores de 0 a 100, e os de PIS e COFINS rejeitam null e negativos. Cada mensagem cita o próprio campo.
+- Resultado: valores inválidos ou nulos são rejeitados com mensagem clara. Testado: setReceitaBrutaAnual(null), setPercentualDePresuncao(150) e setValorPIS(-5) lançam erro, e o CNPJ "12.345.678/0001-90" é gravado como 12345678000190.
+Adicionado: a validação de setPercentualDePresuncao, setValorPIS e setValorCOFINS, e a extração dos números do CNPJ.
+Modificado: System.out.println virou throw new IllegalArgumentException, isEmpty() virou isBlank(), a ordem do teste de null e as mensagens.
+
+5° A atividade principal não era validada e era comparada com `==`.
+- Causa: `setAtividadePrincipal` aceitava qualquer texto (por exemplo, "xyz"). Os métodos de cálculo comparavam a atividade com `==` e `contains(...)` usando textos que não coincidiam com os que o usuário escolheria ("Serviços em Geral", "Intermediação ", "Hopitalar", sem o "s"). O `==` compara a posição do objeto na memória, e não o conteúdo: com `new String("Comercio")` no lugar do literal, nenhuma condição era verdadeira e a base presumida saía 0 sem aviso. Além disso, "Hopitalar" aparecia nas faixas de 8% e de 16%, e a segunda nunca era alcançada.
+- Solução adotada: as atividades passaram a ser constantes (REVENDA_COMBUSTIVEIS, VENDA_MERCADORIAS, TRANSPORTE_CARGAS e as demais, 16 no total) com os nomes da tabela de percentuais de presunção da Receita Federal. O `setAtividadePrincipal` aceita somente essas atividades, com `equalsIgnoreCase()` e o teste `!= null` antes. Qualquer outro valor lança IllegalArgumentException. O `sugerirPercentualPresuncao` usa as mesmas constantes.
+- Resultado: o erro é detectado no momento do cadastro, e a atividade escolhida sempre corresponde a uma linha da tabela.
+Adicionado: as 16 constantes de atividade e a validação do setAtividadePrincipal.
+Modificado: as comparações com == e contains() viraram equalsIgnoreCase().
+
+6° O percentual de presunção era float e estava fixo nos métodos.
+- Causa: `percentualDePresuncao` era `float`, e `new BigDecimal(float)` herda a imprecisão do ponto flutuante (0.32f vira 0.319999992847442626953125). O enunciado pede BigDecimal e que os percentuais sejam informados pelos objetos, não fixados nos métodos. Os métodos de base recebiam o percentual por parâmetro e o sobrescreviam com 0.32, 0.12, 0.08 ou 0.16 escritos no próprio código, ignorando o valor informado.
+- Solução adotada: o percentual passou a ser BigDecimal, de 0 a 100 (por exemplo, 32 significa 32%), validado pelo setter, e o cálculo usa o valor do objeto. O novo `sugerirPercentualPresuncao()` devolve o percentual da tabela conforme a atividade (1,6%, 8%, 16% ou 32%) e serve só como sugestão, que o usuário pode alterar. Para "Servicos gerais", usa 16% se a receita bruta anual for de até R$ 120.000 (constante LIMITE_SERVICOS_16) e 32% acima disso. Para veículos usados, lança IllegalStateException, porque a tabela remete à nota (2).
+- Resultado: o percentual é exato e vem do objeto. Testado: "Venda de mercadorias ou produtos" sugere 8, e "Servicos gerais" sugere 16 com receita anual de 100.000 e 32 com 200.000.
+Adicionado: o método sugerirPercentualPresuncao() e a constante LIMITE_SERVICOS_16.
+Modificado: percentualDePresuncao, de float para BigDecimal, e o limite de R$ 120.000, que passou a valer "até" (<=) e vem de uma constante.
+Removido: as atribuições fixas 0.08f, 0.12f, 0.16f e 0.32f.
+
+7° A base presumida era calculada em dois métodos, com parâmetros que já eram atributos.
+- Causa: `CalculoBasePresumidaIRPJ` e `CalculoBasePresumidaCSLL` recebiam por parâmetro dados que o objeto já possui (receita trimestral, base e percentual), e o parâmetro do percentual era sobrescrito. O método do IRPJ não guardava o resultado no objeto, então `calcularIRPJ`, que usa `BaseDePresuncaoIRPJ`, gerava NullPointerException. Quando nenhuma condição de atividade casava, ficava o percentual recebido (0) e a base saía zerada sem aviso. Por usar float, a receita trimestral de 1.000.000 com 8% resultava em 79999,998211... em vez de 80000.
+- Solução adotada: um único método, `calcularBasePresumida()`, sem parâmetros, calcula receita bruta trimestral x percentual de presunção ÷ 100, com `setScale` de duas casas e `RoundingMode.HALF_UP`. Se a receita trimestral ou o percentual não foram informados, lança IllegalStateException com mensagem clara. Como o enunciado prevê um único percentual de presunção, a mesma base presumida é usada no IRPJ e na CSLL.
+- Resultado: com receita trimestral de 1.000.000 e percentual 8, a base presumida é 80000.00, e o cálculo não depende de ordem de chamada.
+Adicionado: o método calcularBasePresumida() e os testes de null.
+Removido: CalculoBasePresumidaIRPJ e CalculoBasePresumidaCSLL.
+
+8° O IRPJ ignorava a alíquota do objeto e o adicional nunca era somado.
+- Causa: `calcularIRPJ(BigDecimal aliquotaIRPJ, float percentualDePresuncao)` recebia dois parâmetros que não usava e multiplicava a base por 0.15 escrito no código, em vez da alíquota do objeto. A linha do adicional, `aliquotaIRPJ.add(...)`, descartava o resultado, porque BigDecimal é imutável e `add` devolve um novo valor. Por isso o adicional de 10% nunca entrava no resultado. Mesmo que fosse atribuído, a expressão somava a alíquota ao excedente antes de multiplicar por 0.1. Os valores 60000, 0.15 e 0.1 também eram criados a partir de double.
+- Solução adotada: o método não recebe mais parâmetros. Usa a `aliquotaIRPJ` do objeto (em forma decimal, por exemplo 0.15) e a base de `calcularBasePresumida()`. Quando a base ultrapassa o limite trimestral (constante LIMITE_ADICIONAL_IRPJ, R$ 60.000), soma ao imposto o excedente multiplicado pela alíquota do adicional (constante ALIQUOTA_ADICIONAL_IRPJ, 0.10), atribuindo o resultado. O retorno usa `setScale(2, RoundingMode.HALF_UP)`. Se a alíquota não foi informada, lança IllegalStateException.
+- Resultado: com base de 80.000 e alíquota 0.15, o IRPJ é 12.000 + 10% de 20.000 = 14000.00. Na 1° versão, a mesma base resultava em 11999,99... (sem o adicional).
+Adicionado: as constantes LIMITE_ADICIONAL_IRPJ e ALIQUOTA_ADICIONAL_IRPJ e o teste de alíquota nula.
+Modificado: a assinatura do método, o 0.15 fixo (que virou aliquotaIRPJ do objeto), o resultado do add (que passou a ser atribuído) e o arredondamento.
+Removido: os parâmetros aliquotaIRPJ e percentualDePresuncao.
+
+9° A CSLL multiplicava a base por 0,9 e ignorava a alíquota.
+- Causa: `calcularCSLL` fazia `BaseDePresuncaoCSLL.multiply(new BigDecimal(0.9))`, ou seja, 90% da base e não 9%, e ignorava o parâmetro `aliquotaCSLL` e o atributo. O valor era criado a partir de double, saía sem arredondamento e gerava NullPointerException quando a base ainda não tinha sido calculada. Testado: uma base de 120.000 resultava em 107999,99... em vez de 10.800.
+- Solução adotada: o método não recebe mais parâmetros e multiplica `calcularBasePresumida()` pela `aliquotaCSLL` do objeto (em forma decimal, por exemplo 0.09), com `setScale(2, RoundingMode.HALF_UP)`. Se a alíquota não foi informada, lança IllegalStateException.
+- Resultado: com base de 80.000 e alíquota 0.09, a CSLL é 7200.00, e a alíquota informada passa a ser a usada.
+Adicionado: o teste de alíquota nula.
+Modificado: o 0.9 fixo, que virou aliquotaCSLL do objeto, e o arredondamento.
+Removido: os parâmetros aliquotaCSLL e percentualDePresuncao.
+
+10° PIS e COFINS usavam valores fixos criados a partir de double e sem validação.
+- Causa: `new BigDecimal(0.0065)` e `new BigDecimal(0.03)` herdam a imprecisão do ponto flutuante: o PIS de uma receita trimestral de 1.000.000 saía como 6499,99999999999970..., e a COFINS como 29999,99999999999988..., com dezenas de casas decimais. As alíquotas estavam escritas dentro dos métodos, o resultado era atribuído direto ao atributo (sem passar pelo setter) e não havia teste de receita trimestral nula.
+- Solução adotada: as alíquotas passaram a constantes criadas a partir de String (`ALIQUOTA_PIS` = "0.0065" e `ALIQUOTA_COFINS` = "0.03"). Os métodos testam a receita trimestral e lançam IllegalStateException se ela não foi informada. O resultado usa `setScale(2, RoundingMode.HALF_UP)` e é gravado pelo `setValorPIS` e pelo `setValorCOFINS`.
+- Resultado: com receita trimestral de 1.000.000, o PIS é 6500.00 e a COFINS é 30000.00.
+Adicionado: as constantes ALIQUOTA_PIS e ALIQUOTA_COFINS e o teste de receita trimestral nula.
+Modificado: new BigDecimal(0.0065) e new BigDecimal(0.03) viraram constantes em String, as atribuições diretas viraram chamadas aos setters, e o arredondamento.
+
+11° Faltava o método para calcular os tributos trimestrais.
+- Causa: o enunciado pede um "método para calcular os tributos trimestrais", e a classe tinha apenas os cálculos separados, sem o total.
+- Solução adotada: o novo `calcularTotalTributosTrimestrais()` soma o IRPJ, a CSLL, o PIS e a COFINS, chamando cada cálculo.
+- Resultado: o total não depende da ordem em que os métodos foram chamados. Com receita trimestral de 1.000.000, percentual 8, alíquota de IRPJ 0.15 e de CSLL 0.09: IRPJ 14000.00, CSLL 7200.00, PIS 6500.00 e COFINS 30000.00, total de 57700.00.
+Adicionado: o método calcularTotalTributosTrimestrais().
+
+12° Parâmetros legais sem fonte e sem documentação.
+- Causa: o enunciado pede que os percentuais sejam pesquisados conforme a atividade e que os valores legais sejam documentados, mas 60000, 10%, 0,65% e 3% apareciam soltos dentro dos métodos, sem indicação de origem.
+- Solução adotada: os valores foram extraídos para constantes `private static final` (CEM, LIMITE_ADICIONAL_IRPJ, ALIQUOTA_ADICIONAL_IRPJ, ALIQUOTA_PIS, ALIQUOTA_COFINS e LIMITE_SERVICOS_16). 
+- Resultado: os valores ficam centralizados, documentados e fáceis de atualizar.
+Adicionado: as constantes citadas e o comentário com a base legal e a fonte.
+
+13° O construtor completo não validava os dados
+- Causa: o construtor atribuía os valores diretamente aos atributos (this.CNPJ = CNPJ), sem passar pelas validações, e recebia o percentual como float. Era possível criar uma empresa com CNPJ vazio ou alíquota negativa.
+- Solução adotada: todas as atribuições passaram a chamar os respectivos setters, e o percentual passou a ser BigDecimal.
+- Resultado: as mesmas validações valem para o construtor completo e para o construtor padrão com setters. Os parâmetros `valorPIS` e `valorCOFINS` exigem valores não nulos (por exemplo, `BigDecimal.ZERO`), e são recalculados quando o PIS e a COFINS são calculados.
+Modificado: as atribuições diretas (this.x = x) viraram chamadas aos setters, e o tipo do percentual no construtor.
+
+14° `exibir()` quebrava com dados não preenchidos e mostrava informações incorretas.
+- Causa: `datadeAbertura.format(formato)` gerava NullPointerException quando a data não era informada. O rótulo "Receita Mensal" mostrava a receita trimestral, "Aliquota IRPJ" aparecia com "R$", o município e o percentual de presunção não eram exibidos, e os valores calculados (base, IRPJ, CSLL e total) não apareciam.
+- Solução adotada: a data é tratada antes da impressão ("não informada" quando for null). A base presumida, o IRPJ, a CSLL e o total são calculados dentro de um `try/catch` de IllegalStateException, que exibe "não calculada" ou "não calculado" quando faltam dados. Foram incluídos o município, o percentual de presunção, a base presumida, o IRPJ devido, a CSLL devida e o total de tributos, e o rótulo passou a "Receita Trimestral".
+- Resultado: o método imprime os dados de qualquer empresa sem quebrar, inclusive as criadas com o construtor sem parâmetros. Testado com um objeto vazio.
+Adicionado: as variáveis base, irpj, csll, total e data, com tratamento de erro e de null, e as linhas de município, percentual, base, IRPJ devido, CSLL devida e total.
+Modificado: o nome (Exibir → exibir), o rótulo "Receita Mensal" (agora "Receita Trimestral") e a exibição das alíquotas, sem "R$".
+
+15° Indentação e organização do código.
+- Causa: a 1° versão misturava recuo de 4 espaços nos atributos com tabulação nos métodos, e os atributos não indicavam em que forma deviam ser informados.
+- Solução adotada: a classe foi reformatada com tabulação uniforme, com as constantes e os atributos agrupados, e comentários indicando a forma de cada valor (percentual de 0 a 100, alíquotas em forma decimal).
+- Resultado: o código segue a padronização de indentação exigida pelo enunciado.
+Modificado: a indentação de toda a classe.
+
+---
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+PROTÓTIPO DE BAIXA FIDELIDADE DA INTERFACE (TELAS):
+
+O protótipo é uma versão simplificada das telas do sistema. Seu objetivo é mostrar o layout de cada tela e o fluxo de navegação entre elas, sem executar as regras de negócio. No protótipo, apenas a navegação entre as telas e a limpeza dos campos funcionam. Os demais botões não validam, não calculam e não gravam nada: ao serem clicados, apenas exibem no rodapé uma mensagem informando qual botão foi acionado.
+
+Características comuns a todas as telas:
+- Nenhuma tela usa as classes do pacote tipoEmpresa. Não há validação de dados, cálculo de impostos, limite de caracteres nos campos nem armazenamento do que foi digitado.
+- Cada componente (painel, rótulo, campo de texto, caixa de seleção, caixa de marcação e botão) é criado no seu próprio getter, com inicialização preguiçosa (if (x == null)), e o construtor apenas monta a janela. Os botões são ligados ao ActionListener da própria classe.
+- A aparência é a padrão do Swing, com fundo branco nos painéis e sem personalização visual.
+- As telas de cadastro usam DISPOSE_ON_CLOSE: fechar uma tela de cadastro fecha somente aquela janela, e a tela principal continua aberta.
+- As telas de cadastro seguem a mesma divisão: painelCampos (duas colunas, rótulo e campo) na parte central, e painelRodape na parte inferior, que reúne os botões e o painelMensagem. A mensagem inicial é "Preencha os dados e clique em Cadastro.".
+- Campos de resultado (como alíquota, tributo, DAS, lucro real e IRPJ) aparecem somente leitura e permanecem vazios, pois nenhum cálculo é feito.
+- Não fazem parte do protótipo: criarComponentes, montarPaineis, limitarCaracteres, lerDecimal, lerInteiro, lerData, mostrarSucesso, mostrarErro, exibir e a regra que habilitava o Anexo apenas para a atividade de serviço.
+
+---
+
+O arquivo telaPrincipal.class contém as funções responsáveis pela tela inicial do sistema (porta de acesso às telas de cadastro):
+
+main: Ponto de entrada que inicializa a aplicação abrindo a tela principal.
+init: Construtor que configura a janela "Sistema Contábil" (800 x 600, centralizada, fechar a janela encerra o programa) e adiciona o painel de textos no topo e o painel central.
+getPainelTextos: Painel superior com o título e a instrução da tela.
+getPainelCentro: Painel (GridBagLayout) que centraliza o painel dos botões na tela.
+getPainelBotaos: Painel (GridLayout de 4 linhas) que empilha os quatro botões, um embaixo do outro.
+getTextTitulo e getTextInstrucao: Rótulos "Sistema Contábil" e "Escolha o tipo de empresa que deseja cadastrar:".
+getBotaoMei, getBotaoSimples, getBotaoPresumido e getBotaoReal: Botões "Empresa MEI", "Empresa Simples Nacional", "Empresa Lucro Presumido" e "Empresa Lucro Real", todos com o mesmo tamanho (280 x 50).
+actionPerformed: Identifica qual botão foi clicado e abre a tela de cadastro correspondente. A tela principal permanece aberta.
+
+Protótipo: título no topo, instrução logo abaixo e quatro botões centralizados, na ordem MEI, Simples Nacional, Lucro Presumido e Lucro Real.
+Função: é o ponto de partida do sistema. É a única tela do protótipo com navegação funcionando, e cada botão leva a uma tela de cadastro.
+
+---
+
+O arquivo TelaSimplesNacional.class (protótipo) contém as funções responsáveis pela tela de cadastro da empresa do Simples Nacional:
+
+main: Ponto de entrada que abre a tela.
+init: Construtor que configura a janela "Cadastro Empresa Simples Nacional" (920 x 820, centralizada) e adiciona o painel de campos e o rodapé.
+getPainelCampos, getPainelBotoes, getPainelMensagem e getPainelRodape: Painéis que organizam os campos, os botões e a mensagem.
+Getters dos componentes: Criam rótulos, campos de texto, caixas de seleção e botões na primeira vez em que são pedidos.
+actionPerformed: Mapeia os cliques nos botões para as funções correspondentes.
+limpar: Apaga todos os campos, volta as caixas de seleção para a primeira opção e deixa vazios os campos de resultado. Esta função é a única, além da navegação, que funciona de fato.
+cadastrar, calcularAliquota, calcularTributo e verificarLimite: Não executam regra alguma. Cada uma apenas exibe no rodapé a mensagem do botão acionado.
+
+Protótipo:
+- Campos de texto: CNPJ, Razão Social, Nome Fantasia, Município, Faturamento Anual, Faturamento Mensal, Data de Início (dd/MM/aaaa) e Número de Funcionários.
+- Caixas de seleção: Estado (siglas das UFs), Atividade Principal (Comercio, Industria e Servico) e Atividade Secundária (Anexo), com as opções Nenhuma, Anexo 3, Anexo 4 e Anexo 5. A caixa de Anexo fica sempre habilitada.
+- Campos somente leitura: Alíquota Efetiva e Tributo Mensal.
+- Botões: Cadastro, Limpar, Calcular Alíquota Efetiva, Calcular Tributo Mensal e Verificar Limite.
+Função: mostra como o usuário cadastrará uma empresa do Simples Nacional e consultará a alíquota efetiva, o tributo mensal e se o faturamento está dentro do limite.
+
+---
+
+O arquivo TelaEmpresaMEI.class (protótipo) contém as funções responsáveis pela tela de cadastro da empresa MEI:
+
+main: Ponto de entrada que abre a tela.
+init: Construtor que configura a janela "Cadastro Empresa MEI" (900 x 760, centralizada) e adiciona o painel de campos e o rodapé.
+getPainelCampos, getPainelBotoes, getPainelMensagem e getPainelRodape: Painéis que organizam os campos, os botões e a mensagem.
+Getters dos componentes: Criam rótulos, campos de texto, caixas de seleção, a caixa de marcação e os botões na primeira vez em que são pedidos.
+actionPerformed: Mapeia os cliques nos botões para as funções correspondentes.
+limpar: Apaga todos os campos, volta as caixas de seleção para a primeira opção e desmarca a caixa de funcionário.
+cadastrar, calcularDas e verificarLimite: Não executam regra alguma. Cada uma apenas exibe no rodapé a mensagem do botão acionado.
+
+Protótipo:
+- Campos de texto: CNPJ, Razão Social, Nome Fantasia, Município, Faturamento Anual, Faturamento Mensal e Data de Abertura (dd/MM/aaaa).
+- Caixas de seleção: Estado, Ocupação Principal (Comercio, Industria e Servico) e Ocupação Secundária (Nenhuma, Comercio, Industria e Servico).
+- Caixa de marcação: "Possui Funcionário?".
+- Campo somente leitura: Valor Mensal do DAS.
+- Botões: Cadastro, Limpar, Calcular DAS e Verificar Limite.
+Função: mostra como o usuário cadastrará um MEI e consultará o valor mensal do DAS e se o faturamento está dentro do limite do MEI.
+
+---
+
+O arquivo TelaEmpresaLucroReal.class (protótipo) contém as funções responsáveis pela tela de cadastro da empresa do Lucro Real:
+
+main: Ponto de entrada que abre a tela.
+init: Construtor que configura a janela "Cadastro Empresa Lucro Real" (920 x 880, centralizada) e adiciona o painel de campos e o rodapé.
+getPainelCampos, getPainelResultados, getPainelBotoes, getPainelMensagem e getPainelRodape: Painéis que organizam os campos, os resultados, os botões e a mensagem. O rodapé mostra os resultados em cima, os botões no meio e a mensagem embaixo.
+Getters dos componentes: Criam rótulos, campos de texto, caixas de seleção e botões na primeira vez em que são pedidos.
+actionPerformed: Mapeia os cliques nos botões para as funções correspondentes.
+limpar: Apaga todos os campos, volta as caixas de seleção para a primeira opção e deixa vazios os campos de resultado.
+cadastrar, calcularLucroReal, calcularIrpj e calcularCsll: Não executam regra alguma. Cada uma apenas exibe no rodapé a mensagem do botão acionado.
+
+Protótipo:
+- Campos de texto: CNPJ, Razão Social, Nome Fantasia, Município, Data de Início (dd/MM/aaaa), Receita Bruta Anual, Despesas Dedutíveis, Lucro Contábil (pode ser negativo), Prejuízo Fiscal, Alíquota do IRPJ em % e Alíquota da CSLL em %.
+- Caixas de seleção: Estado, Atividade Principal (Comercio, Industria e Servico) e Atividade Secundária (Nenhuma, Comercio, Industria e Servico).
+- Campos de resultado, somente leitura: Lucro Ajustado, Lucro Real, IRPJ devido e CSLL devida.
+- Botões: Cadastro, Limpar, Calcular Lucro Real, Calcular IRPJ e Calcular CSLL.
+Função: mostra como o usuário cadastrará uma empresa do Lucro Real e consultará o lucro ajustado, o lucro real, o IRPJ e a CSLL.
+
+---
+
+O arquivo TelaEmpresaLucroPresumido.class (protótipo) contém as funções responsáveis pela tela de cadastro da empresa do Lucro Presumido:
+
+main: Ponto de entrada que abre a tela.
+init: Construtor que configura a janela "Cadastro Empresa Lucro Presumido" (1000 x 900, centralizada) e adiciona o painel de campos e o rodapé.
+getPainelCampos, getPainelResultados, getPainelBotoes, getPainelMensagem e getPainelRodape: Painéis que organizam os campos, os resultados (em quatro colunas), os botões (em cinco colunas) e a mensagem.
+Getters dos componentes: Criam rótulos, campos de texto, caixas de seleção e botões na primeira vez em que são pedidos.
+actionPerformed: Mapeia os cliques nos botões para as funções correspondentes.
+limpar: Apaga todos os campos, volta as caixas de seleção para a primeira opção e deixa vazios os campos de resultado.
+cadastrar, sugerirPercentual, calcularBase, calcularIrpj, calcularCsll, calcularPis, calcularCofins e calcularTotal: Não executam regra alguma. Cada uma apenas exibe no rodapé a mensagem do botão acionado.
+
+Protótipo:
+- Campos de texto: CNPJ, Razão Social, Nome Fantasia, Município, Data de Início (dd/MM/aaaa), Receita Bruta Anual, Receita Bruta Trimestral, Percentual de Presunção em %, Alíquota do IRPJ em % e Alíquota da CSLL em %.
+- Caixas de seleção: Estado, Atividade Principal (as 16 atividades da tabela de percentuais de presunção da Receita Federal) e Atividade Secundária (Nenhuma e as mesmas 16 atividades).
+- Campos de resultado, somente leitura: Base Presumida, Total de Tributos, IRPJ devido, CSLL devida, Valor do PIS e Valor do COFINS.
+- Botões: Cadastro, Limpar, Sugerir Percentual, Calcular Base Presumida, Calcular IRPJ, Calcular CSLL, Calcular PIS, Calcular COFINS e Calcular Total.
+Função: mostra como o usuário cadastrará uma empresa do Lucro Presumido, obterá a sugestão do percentual de presunção e consultará a base presumida e cada tributo do trimestre.
+
+---
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
